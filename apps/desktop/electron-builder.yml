@@ -1,0 +1,34 @@
+# Electron Builder configuration for the DeepSeek Harness desktop shell (macOS).
+# `pack-runtime` stages the dsh web runtime closure (CLI + plugins + frontend
+# dist) into dist/runtime first; it ships as an extraResource and the packaged
+# app runs it under Electron's bundled Node.
+appId: com.deepseek-ai.dsh.desktop
+productName: DeepSeek Harness
+directories:
+  buildResources: build
+  output: dist
+files:
+  - lib/**/*
+  - package.json
+extraResources:
+  # Copy from the parent `dist` so the runtime's top-level `node_modules` is a
+  # nested path (`runtime/node_modules`): electron-builder's copy filter always
+  # skips a source's top-level `node_modules` directory.
+  - from: dist
+    to: .
+    filter:
+      - runtime/**/*
+# The electron zip cache defaults to ~/Library/Caches/electron; keep it inside
+# the checkout so packaging needs no host cache outside the workspace.
+electronDownload:
+  cache: .cache/electron
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  target:
+    - target: dir
+      arch:
+        - arm64
+    - target: dmg
+      arch:
+        - arm64

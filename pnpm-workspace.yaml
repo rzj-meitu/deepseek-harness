@@ -11,6 +11,9 @@ packages:
   # Deploy root of the single-exe build: a pure dependency manifest whose
   # closure is what the exe bundles and what the Python runtime distributes.
   - python/sdk-runtime
+  # Deploy root of the Electron desktop shell: a pure dependency manifest whose
+  # closure is what the .app bundles (the dsh web runtime).
+  - apps/desktop/runtime
 
 # Vendored framework packages keep their upstream semver ranges, while local
 # builds must resolve those matching names to this workspace's pinned sources.
@@ -45,6 +48,9 @@ allowBuilds:
   # The Python runtime deploy includes the reviewed workspace postinstall that
   # restores the executable bit on node-pty's macOS spawn helper.
   '@deepseek-ai/dsh-subprocess-local@file:packages/subprocess/subprocess-local': true
+  # Squirrel.Windows installer pulled in by electron-builder; we only ship the
+  # macOS shell, so its Windows-only build script stays denied.
+  electron-winstaller: false
 
 minimumReleaseAgeExclude:
   # Fresh pi-ai releases carry the model catalog updates that are the whole
