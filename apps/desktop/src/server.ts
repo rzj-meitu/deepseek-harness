@@ -8,6 +8,8 @@
 
 import type { ChildProcess } from 'node:child_process'
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** The line prefix `dsh web` prints once its server is bound and its routes are mounted. */
@@ -22,23 +24,30 @@ export const READY_LINE_PREFIX = 'dsh web: '
 export const EPHEMERAL_PORT = 0
 
 /**
- * The repo root, resolved from this package's location. `apps/desktop/src` and
- * `apps/desktop/lib` are both three levels below the root, so one URL works
- * from either artifact.
+ * The repo root, found by walking up from this file to the directory that
+ * holds `pnpm-workspace.yaml`. The built artifact sits one level deeper than
+ * the source (`lib/types` vs `src`), so a fixed hop count would only work from
+ * one of them; the marker search is depth-independent.
  * @returns the absolute repo-root path.
  */
 export function resolveRepoRoot(): string {
-  return fileURLToPath(new URL('../../..', import.meta.url))
+  let directory = fileURLToPath(new URL('.', import.meta.url))
+  for (;;) {
+    if (existsSync(join(directory, 'pnpm-workspace.yaml'))) return directory
+    const parent = dirname(directory)
+    if (parent === directory) {
+      throw new Error('dsh-desktop: could not locate the repo root (no pnpm-workspace.yaml ancestor)')
+    }
+    directory = parent
+  }
 }
 
 /**
- * The built `dsh` CLI entry (`apps/cli/lib/bin.js`), adjacent to this app.
- * `apps/desktop/src` and `apps/desktop/lib` are both two hops below `apps/`, so
- * one URL works from either artifact.
+ * The built `dsh` CLI entry (`apps/cli/lib/bin.js`), relative to the repo root.
  * @returns the absolute bin path.
  */
 export function resolveCliBin(): string {
-  return fileURLToPath(new URL('../../cli/lib/bin.js', import.meta.url))
+  return join(resolveRepoRoot(), 'apps', 'cli', 'lib', 'bin.js')
 }
 
 /**

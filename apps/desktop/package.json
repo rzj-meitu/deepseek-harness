@@ -4,7 +4,7 @@
   "version": "0.1.0-rc.5",
   "private": true,
   "type": "module",
-  "main": "lib/main.js",
+  "main": "lib/types/main.js",
   "license": "MIT",
   "scripts": {
     "build": "tsc -p tsconfig.json",
