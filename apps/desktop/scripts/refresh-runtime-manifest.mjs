@@ -4,9 +4,11 @@
  * workspace packages; this script recomputes the seed set so the deploy root
  * never points at a renamed or removed package.
  *
- * The manifest is a seed list, not a full closure: `pnpm deploy --legacy`
- * materializes the transitive workspace closure from these seeds (see
- * scripts/pack-runtime.mjs). The seeds are:
+ * The manifest lists the full runtime closure. `pnpm deploy --legacy`
+ * materializes transitive `dependencies`, but with auto peer installation
+ * disabled it does NOT install required `peerDependencies` (see
+ * scripts/verify-runtime-closure.ts). So the closure walks dependencies,
+ * optionalDependencies, and non-optional peerDependencies from these roots:
  *
  * - the `dsh` CLI host package itself (`@deepseek-ai/dsh`, the `apps/cli`
  *   entry the shell spawns),
@@ -17,9 +19,8 @@
  * - the platform singletons the client shell shares into its frozen module
  *   table (`dsh-client-ui-slots`, `dsh-client-ui-primitives`).
  *
- * It deletes any `@deepseek-ai/*` dependency that no longer exists in the
- * workspace and writes the result back sorted, so the output is canonical and
- * the diff after a dsh update is exactly the package renames/splits.
+ * It writes the closure back sorted, so the output is canonical and the diff
+ * after a dsh update is exactly the package renames/splits.
  *
  * Run it before `pnpm install`; it is safe to run repeatedly (idempotent).
  */
@@ -75,12 +76,13 @@ function collectWorkspacePackages() {
 }
 
 /**
- * Compute the seed set from the current workspace.
+ * Compute the runtime closure from the current workspace.
  * @param {Map<string, any>} workspace package name -> manifest.
- * @returns {Set<string>} workspace package names that must be listed as seeds.
+ * @returns {Set<string>} every workspace package reachable from the roots
+ *   through dependencies, optionalDependencies, and required peers.
  */
-function collectSeeds(workspace) {
-  const seeds = new Set(ALWAYS_SEEDS)
+function computeClosure(workspace) {
+  const roots = new Set(ALWAYS_SEEDS)
 
   const addDeps = (manifestPath) => {
     let manifest
@@ -89,30 +91,48 @@ function collectSeeds(workspace) {
     } catch {
       return
     }
-    for (const name of Object.keys(manifest.dependencies ?? {})) {
-      if (workspace.has(name)) seeds.add(name)
-    }
+    for (const name of Object.keys(manifest.dependencies ?? {})) roots.add(name)
   }
   addDeps('apps/cli/package.json')
   addDeps('packages/bundle/web-app/package.json')
 
   for (const [name, manifest] of workspace) {
-    if (manifest.dsh?.client) seeds.add(name)
+    if (manifest.dsh?.client) roots.add(name)
   }
-  return seeds
+
+  const closure = new Set()
+  const queue = []
+  const add = (name) => {
+    if (!workspace.has(name) || closure.has(name)) return
+    closure.add(name)
+    queue.push(name)
+  }
+  for (const root of roots) add(root)
+
+  for (let index = 0; index < queue.length; index += 1) {
+    const manifest = workspace.get(queue[index])
+    const dependencies = {
+      ...manifest.dependencies,
+      ...manifest.optionalDependencies,
+    }
+    for (const dependency of Object.keys(dependencies)) add(dependency)
+    const peers = manifest.peerDependencies ?? {}
+    const peerMeta = manifest.peerDependenciesMeta ?? {}
+    for (const peer of Object.keys(peers)) {
+      if (peerMeta[peer]?.optional === true) continue
+      add(peer)
+    }
+  }
+  return closure
 }
 
 const workspace = collectWorkspacePackages()
-const seeds = collectSeeds(workspace)
+const seeds = computeClosure(workspace)
 
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
 const current = new Set(Object.keys(manifest.dependencies ?? {}))
 
-const next = new Set(current)
-for (const name of current) {
-  if (name.startsWith('@deepseek-ai/') && !workspace.has(name)) next.delete(name)
-}
-for (const name of seeds) next.add(name)
+const next = seeds
 
 manifest.dependencies = Object.fromEntries(
   [...next].sort().map((name) => [name, 'workspace:^']),
